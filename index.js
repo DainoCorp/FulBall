@@ -7,43 +7,42 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
 
-// Middleware para servir archivos estáticos desde la carpeta 'public'
 app.use(express.static(path.join(__dirname, 'public')));
 
 const players = {};
-const ball = { x: 400, y: 350, vx: 0, vy: 0, radius: 15 };
+const ball = { x: 400, y: 250, vx: 0, vy: 0, radius: 15 };
 
 const predefinedPositions = [
-    { x: 100, y: 350 }, // Jugador 1
-    { x: 900, y: 350 }  // Jugador 2
+    { x: 100, y: 250 }, // Jugador 1
+    { x: 700, y: 250 }  // Jugador 2
 ];
 
-const fieldWidth = 1000;
-const fieldHeight = 700;
+const fieldWidth = 800;
+const fieldHeight = 500;
 
 const distance = (x1, y1, x2, y2) => {
     return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2);
 };
 
-const handleCollision = (player1, player2) => {
-    const dist = distance(player1.x, player1.y, player2.x, player2.y);
-    if (dist < 40) {
-        const overlap = 40 - dist;
-        const dx = (player2.x - player1.x) / dist;
-        const dy = (player2.y - player1.y) / dist;
+const handlePlayerCollision = (player) => {
+    // Limitar el movimiento del jugador dentro de la cancha
+    if (player.x < 20) {
+        player.x = 20; // Limitar a la izquierda
+    } else if (player.x > fieldWidth - 20) {
+        player.x = fieldWidth - 20; // Limitar a la derecha
+    }
 
-        player1.x -= dx * overlap / 2;
-        player1.y -= dy * overlap / 2;
-
-        player2.x += dx * overlap / 2;
-        player2.y += dy * overlap / 2;
+    if (player.y < 20) {
+        player.y = 20; // Limitar arriba
+    } else if (player.y > fieldHeight - 20) {
+        player.y = fieldHeight - 20; // Limitar abajo
     }
 };
 
 const handleBallCollision = (player, ball) => {
     const dist = distance(player.x, player.y, ball.x, ball.y);
     if (dist < 35) {
-        const overlap = 35 - dist;
+        const overlap = 35 - dist; // Calcular el solapamiento
         const dx = (ball.x - player.x) / dist;
         const dy = (ball.y - player.y) / dist;
 
@@ -51,27 +50,45 @@ const handleBallCollision = (player, ball) => {
         player.x -= dx * overlap;
         player.y -= dy * overlap;
 
-        // Aplicar movimiento limitado a la pelota
-        const forceMultiplier = 0.5; // Ajusta esto para cambiar cuánto se mueve la pelota
-        ball.vx += dx * overlap * forceMultiplier;
-        ball.vy += dy * overlap * forceMultiplier;
+        // Mover la pelota en la dirección del jugador
+        const kickStrength = Math.sqrt(player.vx ** 2 + player.vy ** 2) * 0.5; // Fuerza proporcional
+        ball.vx += dx * kickStrength;
+        ball.vy += dy * kickStrength;
+    }
+};
+
+const updateBallPosition = () => {
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    // Colisiones con los bordes del campo
+    if (ball.x < ball.radius) {
+        ball.x = ball.radius; // Rebotar en el borde izquierdo
+        ball.vx = Math.abs(ball.vx); // Asegurarse de que la pelota se mueva hacia la derecha
+    } else if (ball.x > fieldWidth - ball.radius) {
+        ball.x = fieldWidth - ball.radius; // Rebotar en el borde derecho
+        ball.vx = -Math.abs(ball.vx); // Asegurarse de que la pelota se mueva hacia la izquierda
+    }
+
+    if (ball.y < ball.radius) {
+        ball.y = ball.radius; // Rebotar en el borde superior
+        ball.vy = Math.abs(ball.vy); // Asegurarse de que la pelota se mueva hacia abajo
+    } else if (ball.y > fieldHeight - ball.radius) {
+        ball.y = fieldHeight - ball.radius; // Rebotar en el borde inferior
+        ball.vy = -Math.abs(ball.vy); // Asegurarse de que la pelota se mueva hacia arriba
+    }
+
+    // Detener la pelota si su velocidad es muy baja
+    if (Math.abs(ball.vx) < 0.1 && Math.abs(ball.vy) < 0.1) {
+        ball.vx = 0;
+        ball.vy = 0;
     }
 };
 
 io.on('connection', (socket) => {
     console.log('Nuevo jugador conectado: ' + socket.id);
 
-    let position;
-
-    // Asignar posición específica al nuevo jugador
-    if (Object.keys(players).length < predefinedPositions.length) {
-        position = predefinedPositions[Object.keys(players).length];
-    } else {
-        position = {
-            x: Math.random() < 0.5 ? 100 : 900, // Alterna entre las posiciones
-            y: Math.random() * 700
-        };
-    }
+    let position = predefinedPositions[Object.keys(players).length % predefinedPositions.length];
 
     players[socket.id] = {
         x: position.x,
@@ -87,11 +104,11 @@ io.on('connection', (socket) => {
     socket.on('movement', (movementData) => {
         const player = players[socket.id];
 
-        // Aplicar fricción para el efecto de patinaje
-        player.vx *= 0.95;
-        player.vy *= 0.95;
+        // Aplicar fricción
+        player.vx *= 0.9; // Suaviza el movimiento del jugador
+        player.vy *= 0.9; // Suaviza el movimiento del jugador
 
-        const playerSpeed = 0.5;  // Velocidad del jugador
+        const playerSpeed = 0.5;  // Ajusta la velocidad del jugador
 
         if (movementData.left) player.vx -= playerSpeed;
         if (movementData.up) player.vy -= playerSpeed;
@@ -101,29 +118,8 @@ io.on('connection', (socket) => {
         player.x += player.vx;
         player.y += player.vy;
 
-        // Limitar jugadores dentro del campo
-        if (player.x < 50) player.x = 50;
-        if (player.x > fieldWidth - 50) player.x = fieldWidth - 50;
-        if (player.y < 50) player.y = 50;
-        if (player.y > fieldHeight - 50) player.y = fieldHeight - 50;
-
-        // Verificar colisiones con otros jugadores
-        for (let id in players) {
-            if (id !== socket.id) {
-                handleCollision(player, players[id]);
-            }
-        }
-
-        // Verificar colisión con la pelota
+        handlePlayerCollision(player);
         handleBallCollision(player, ball);
-
-        // Verificar si el jugador está cerca de la pelota
-        const distToBall = distance(player.x, player.y, ball.x, ball.y);
-        if (distToBall < 40 && movementData.kick) {
-            // Calcular la dirección de la patada
-            ball.vx += (ball.x - player.x) / distToBall * 2; // Cambiar 5 por 2 para mover menos la pelota
-            ball.vy += (ball.y - player.y) / distToBall * 2; // Cambiar 5 por 2 para mover menos la pelota
-        }
     });
 
     socket.on('disconnect', () => {
@@ -131,30 +127,23 @@ io.on('connection', (socket) => {
         delete players[socket.id];
     });
 
-    // Enviar estado del juego a todos los clientes
     setInterval(() => {
-        // Actualizar la posición de la pelota
-        ball.x += ball.vx;
-        ball.y += ball.vy;
+        updateBallPosition();
 
-        // Aplicar fricción a la pelota
-        ball.vx *= 0.99; // Disminuir velocidad de la pelota gradualmente
-        ball.vy *= 0.99; // Disminuir velocidad de la pelota gradualmente
-
-        // Colisiones con los bordes del campo
-        if (ball.x < 35 || ball.x > fieldWidth - 35) {
-            ball.vx *= -1; // Rebotar en los bordes
-        }
-        if (ball.y < 35 || ball.y > fieldHeight - 35) {
-            ball.vy *= -1; // Rebotar en los bordes
-        }
-
-        // Detener la pelota si su velocidad es demasiado baja
-        const speedThreshold = 0.1; // Ajusta este valor según sea necesario
-        if (Math.abs(ball.vx) < speedThreshold) {
+        // Verificar si se marca un gol solo si la pelota está en el arco
+        if (ball.x <= 20 && ball.y > (fieldHeight / 2 - 30) && ball.y < (fieldHeight / 2 + 30)) {
+            const scoringTeam = 'Rojo';
+            io.emit('goal', scoringTeam);
+            ball.x = fieldWidth / 2;
+            ball.y = fieldHeight / 2;
             ball.vx = 0;
-        }
-        if (Math.abs(ball.vy) < speedThreshold) {
+            ball.vy = 0;
+        } else if (ball.x >= fieldWidth - 20 && ball.y > (fieldHeight / 2 - 30) && ball.y < (fieldHeight / 2 + 30)) {
+            const scoringTeam = 'Azul';
+            io.emit('goal', scoringTeam);
+            ball.x = fieldWidth / 2;
+            ball.y = fieldHeight / 2;
+            ball.vx = 0;
             ball.vy = 0;
         }
 

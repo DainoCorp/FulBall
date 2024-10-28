@@ -5,15 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Haxball Multiplayer</title>
     <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #333;
+            color: white;
+        }
         canvas {
             background-color: green;
             display: block;
             margin: 0 auto;
+            border-radius: 30px; /* Esquinas redondeadas del canvas */
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="1000" height="700"></canvas>
+    <h1 id="goalMessage"></h1>
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -84,40 +92,25 @@
         });
 
         function drawField() {
-            // Dibujar el campo interior
-            context.fillStyle = 'green';
-            context.fillRect(0, 0, canvas.width, canvas.height); // Campo completo
+            context.fillStyle = '#4CAF50'; // Color del campo
+            context.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Dibujar el borde blanco
+            // Dibuja el arco de gol (rectangular)
             context.strokeStyle = 'white';
             context.lineWidth = 5;
-            context.strokeRect(20, 20, canvas.width - 40, canvas.height - 40); // Campo interior
 
-            // Línea central
-            context.beginPath();
-            context.moveTo(canvas.width / 2, 20);
-            context.lineTo(canvas.width / 2, canvas.height - 20);
-            context.stroke();
+            // Arco izquierdo (área de gol)
+            context.fillRect(0, canvas.height / 2 - 30, 20, 60); // Área de gol izquierda
+            context.strokeRect(0, canvas.height / 2 - 30, 20, 60);
 
-            // Círculo central
-            context.beginPath();
-            context.arc(canvas.width / 2, canvas.height / 2, 50, 0, Math.PI * 2);
-            context.stroke();
-
-            // Arcos de las porterías
-            context.beginPath();
-            context.arc(20, canvas.height / 2, 50, Math.PI / 2, 3 * Math.PI / 2);
-            context.stroke();
-
-            context.beginPath();
-            context.arc(canvas.width - 20, canvas.height / 2, 50, -Math.PI / 2, Math.PI / 2);
-            context.stroke();
+            // Arco derecho (área de gol)
+            context.fillRect(canvas.width - 20, canvas.height / 2 - 30, 20, 60); // Área de gol derecha
+            context.strokeRect(canvas.width - 20, canvas.height / 2 - 30, 20, 60);
         }
 
         function draw() {
-            drawField(); // Llamar a la función que dibuja el campo
+            drawField();
 
-            // Dibujar jugadores
             for (let id in players) {
                 const player = players[id];
                 context.beginPath();
@@ -127,18 +120,26 @@
                 context.closePath();
             }
 
-            // Dibujar la pelota
             context.beginPath();
             context.arc(ball.x, ball.y, ball.radius, 0, 2 * Math.PI);
             context.fillStyle = 'white';
             context.fill();
             context.closePath();
 
-            // Enviar movimiento al servidor
             socket.emit('movement', keys);
 
             requestAnimationFrame(draw);
         }
+
+        function displayGoalMessage(team) {
+            const message = `¡Equipo ${team} ha metido un gol!`;
+            document.getElementById('goalMessage').innerText = message;
+            setTimeout(() => {
+                document.getElementById('goalMessage').innerText = '';
+            }, 3000);
+        }
+
+        socket.on('goal', displayGoalMessage);
     </script>
 </body>
 </html>
