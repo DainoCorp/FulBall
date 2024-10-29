@@ -25,35 +25,40 @@ const distance = (x1, y1, x2, y2) => {
 };
 
 const handlePlayerCollision = (player) => {
-    // Limitar el movimiento del jugador dentro de la cancha
-    if (player.x < 20) {
-        player.x = 20; // Limitar a la izquierda
-    } else if (player.x > fieldWidth - 20) {
-        player.x = fieldWidth - 20; // Limitar a la derecha
-    }
-
-    if (player.y < 20) {
-        player.y = 20; // Limitar arriba
-    } else if (player.y > fieldHeight - 20) {
-        player.y = fieldHeight - 20; // Limitar abajo
-    }
+    if (player.x < 20) player.x = 20; 
+    else if (player.x > fieldWidth - 20) player.x = fieldWidth - 20; 
+    if (player.y < 20) player.y = 20; 
+    else if (player.y > fieldHeight - 20) player.y = fieldHeight - 20; 
 };
 
 const handleBallCollision = (player, ball) => {
     const dist = distance(player.x, player.y, ball.x, ball.y);
     if (dist < 35) {
-        const overlap = 35 - dist; // Calcular el solapamiento
+        const overlap = 35 - dist;
         const dx = (ball.x - player.x) / dist;
         const dy = (ball.y - player.y) / dist;
 
-        // Alejar al jugador de la pelota
-        player.x -= dx * overlap;
-        player.y -= dy * overlap;
+        if (player.canMove) {
+            player.x -= dx * overlap;
+            player.y -= dy * overlap;
+            const kickStrength = 0.5;
+            ball.vx += dx * kickStrength;
+            ball.vy += dy * kickStrength;
+        }
+    }
+};
 
-        // Mover la pelota en la dirección del jugador
-        const kickStrength = Math.sqrt(player.vx ** 2 + player.vy ** 2) * 0.5; // Fuerza proporcional
-        ball.vx += dx * kickStrength;
-        ball.vy += dy * kickStrength;
+const handlePlayerToPlayerCollision = (player1, player2) => {
+    const dist = distance(player1.x, player1.y, player2.x, player2.y);
+    if (dist < 40) {
+        const overlap = 40 - dist;
+        const dx = (player1.x - player2.x) / dist;
+        const dy = (player1.y - player2.y) / dist;
+
+        player1.x += dx * overlap * 0.5;
+        player1.y += dy * overlap * 0.5;
+        player2.x -= dx * overlap * 0.5;
+        player2.y -= dy * overlap * 0.5;
     }
 };
 
@@ -61,28 +66,38 @@ const updateBallPosition = () => {
     ball.x += ball.vx;
     ball.y += ball.vy;
 
-    // Colisiones con los bordes del campo
     if (ball.x < ball.radius) {
-        ball.x = ball.radius; // Rebotar en el borde izquierdo
-        ball.vx = Math.abs(ball.vx); // Asegurarse de que la pelota se mueva hacia la derecha
+        ball.x = ball.radius;
+        ball.vx = Math.abs(ball.vx);
     } else if (ball.x > fieldWidth - ball.radius) {
-        ball.x = fieldWidth - ball.radius; // Rebotar en el borde derecho
-        ball.vx = -Math.abs(ball.vx); // Asegurarse de que la pelota se mueva hacia la izquierda
+        ball.x = fieldWidth - ball.radius;
+        ball.vx = -Math.abs(ball.vx);
     }
-
     if (ball.y < ball.radius) {
-        ball.y = ball.radius; // Rebotar en el borde superior
-        ball.vy = Math.abs(ball.vy); // Asegurarse de que la pelota se mueva hacia abajo
+        ball.y = ball.radius;
+        ball.vy = Math.abs(ball.vy);
     } else if (ball.y > fieldHeight - ball.radius) {
-        ball.y = fieldHeight - ball.radius; // Rebotar en el borde inferior
-        ball.vy = -Math.abs(ball.vy); // Asegurarse de que la pelota se mueva hacia arriba
+        ball.y = fieldHeight - ball.radius;
+        ball.vy = -Math.abs(ball.vy);
     }
 
-    // Detener la pelota si su velocidad es muy baja
     if (Math.abs(ball.vx) < 0.1 && Math.abs(ball.vy) < 0.1) {
         ball.vx = 0;
         ball.vy = 0;
     }
+};
+
+const resetGame = (scoringPlayer) => {
+    Object.keys(players).forEach((id, index) => {
+        players[id].x = predefinedPositions[index].x;
+        players[id].y = predefinedPositions[index].y;
+        players[id].canTouchBall = players[id].id !== scoringPlayer; 
+    });
+
+    ball.x = fieldWidth / 2;
+    ball.y = fieldHeight / 2;
+    ball.vx = 0;
+    ball.vy = 0;
 };
 
 io.on('connection', (socket) => {
@@ -94,21 +109,24 @@ io.on('connection', (socket) => {
         x: position.x,
         y: position.y,
         color: Object.keys(players).length % 2 === 0 ? 'red' : 'blue',
-        canKick: true,
+        canMove: true,
+        canTouchBall: true,
         vx: 0,
-        vy: 0
+        vy: 0,
+        id: socket.id,
+        name: `Jugador ${Object.keys(players).length}` // Nombre del jugador
     };
 
     socket.emit('init', { players, ball });
 
     socket.on('movement', (movementData) => {
         const player = players[socket.id];
+        if (!player.canMove) return;
 
-        // Aplicar fricción
-        player.vx *= 0.9; // Suaviza el movimiento del jugador
-        player.vy *= 0.9; // Suaviza el movimiento del jugador
+        player.vx *= 0.9;
+        player.vy *= 0.9;
 
-        const playerSpeed = 0.5;  // Ajusta la velocidad del jugador
+        const playerSpeed = 0.5;
 
         if (movementData.left) player.vx -= playerSpeed;
         if (movementData.up) player.vy -= playerSpeed;
@@ -119,7 +137,14 @@ io.on('connection', (socket) => {
         player.y += player.vy;
 
         handlePlayerCollision(player);
-        handleBallCollision(player, ball);
+        if (player.canTouchBall) {
+            handleBallCollision(player, ball);
+        }
+    });
+
+    socket.on('touchBall', () => {
+        const player = players[socket.id];
+        player.canTouchBall = true; // Permitir tocar la pelota
     });
 
     socket.on('disconnect', () => {
@@ -130,25 +155,28 @@ io.on('connection', (socket) => {
     setInterval(() => {
         updateBallPosition();
 
-        // Verificar si se marca un gol solo si la pelota está en el arco
-        if (ball.x <= 20 && ball.y > (fieldHeight / 2 - 30) && ball.y < (fieldHeight / 2 + 30)) {
-            const scoringTeam = 'Rojo';
-            io.emit('goal', scoringTeam);
-            ball.x = fieldWidth / 2;
-            ball.y = fieldHeight / 2;
-            ball.vx = 0;
-            ball.vy = 0;
-        } else if (ball.x >= fieldWidth - 20 && ball.y > (fieldHeight / 2 - 30) && ball.y < (fieldHeight / 2 + 30)) {
-            const scoringTeam = 'Azul';
-            io.emit('goal', scoringTeam);
-            ball.x = fieldWidth / 2;
-            ball.y = fieldHeight / 2;
-            ball.vx = 0;
-            ball.vy = 0;
+        const playerIds = Object.keys(players);
+        for (let i = 0; i < playerIds.length; i++) {
+            for (let j = i + 1; j < playerIds.length; j++) {
+                handlePlayerToPlayerCollision(players[playerIds[i]], players[playerIds[j]]);
+            }
+        }
+
+        // Marcar goles
+        if (ball.x <= 20 && ball.y > (fieldHeight / 2 - 50) && ball.y < (fieldHeight / 2 + 50)) {
+            const scoringPlayer = playerIds[1]; // Suponiendo que el jugador 2 anota
+            players[scoringPlayer].canTouchBall = false; // Restringir el acceso a la pelota
+            io.emit('goal', { player: players[scoringPlayer] });
+            resetGame(scoringPlayer);
+        } else if (ball.x >= fieldWidth - 20 && ball.y > (fieldHeight / 2 - 50) && ball.y < (fieldHeight / 2 + 50)) {
+            const scoringPlayer = playerIds[0]; // Suponiendo que el jugador 1 anota
+            players[scoringPlayer].canTouchBall = false; // Restringir el acceso a la pelota
+            io.emit('goal', { player: players[scoringPlayer] });
+            resetGame(scoringPlayer);
         }
 
         io.emit('state', { players, ball });
-    }, 1000 / 60); // 60 FPS
+    }, 1000 / 60);
 });
 
 const PORT = process.env.PORT || 3000;

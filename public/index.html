@@ -15,11 +15,30 @@
             background-color: green;
             display: block;
             margin: 0 auto;
-            border-radius: 30px; /* Esquinas redondeadas del canvas */
+            border-radius: 30px;
+        }
+        .scoreboard {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .score {
+            font-size: 24px;
+            margin: 0 20px;
+        }
+        .team1 {
+            color: rgb(255, 0, 0); /* Color del equipo 1 */
+        }
+        .team2 {
+            color: rgb(0, 26, 255); /* Color del equipo 2 */
         }
     </style>
 </head>
 <body>
+    <div class="scoreboard">
+        <div class="score team1" id="team1Score">0</div>
+        <div class="score team2" id="team2Score">0</div>
+    </div>
     <h1 id="goalMessage"></h1>
     <canvas id="gameCanvas" width="800" height="500"></canvas>
 
@@ -31,6 +50,8 @@
         const socket = io();
         let players = {};
         let ball = {};
+        let team1Goals = 0;
+        let team2Goals = 0;
 
         const keys = {
             left: false,
@@ -91,21 +112,46 @@
             ball = data.ball;
         });
 
+        socket.on('goal', (team) => {
+            if (team === 1) {
+                team1Goals++;
+                document.getElementById('team1Score').innerText = team1Goals;
+            } else {
+                team2Goals++;
+                document.getElementById('team2Score').innerText = team2Goals;
+            }
+            displayGoalMessage(team);
+        });
+
         function drawField() {
-            context.fillStyle = '#4CAF50'; // Color del campo
+            context.fillStyle = '#4CAF50'; 
             context.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Dibuja el arco de gol (rectangular)
             context.strokeStyle = 'white';
             context.lineWidth = 5;
 
-            // Arco izquierdo (área de gol)
-            context.fillRect(0, canvas.height / 2 - 30, 20, 60); // Área de gol izquierda
-            context.strokeRect(0, canvas.height / 2 - 30, 20, 60);
+            context.beginPath();
+            context.moveTo(canvas.width / 2, 0);
+            context.lineTo(canvas.width / 2, canvas.height);
+            context.stroke();
 
-            // Arco derecho (área de gol)
-            context.fillRect(canvas.width - 20, canvas.height / 2 - 30, 20, 60); // Área de gol derecha
-            context.strokeRect(canvas.width - 20, canvas.height / 2 - 30, 20, 60);
+            context.beginPath();
+            context.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
+            context.stroke();
+
+            context.lineWidth = 5;
+
+            context.beginPath();
+            context.moveTo(20, canvas.height / 2 - 50);
+            context.lineTo(20, canvas.height / 2 + 50);
+            context.arc(20, canvas.height / 2, 50, Math.PI / 2, -Math.PI / 2, false);
+            context.stroke();
+            
+            context.beginPath();
+            context.moveTo(canvas.width - 20, canvas.height / 2 - 50);
+            context.lineTo(canvas.width - 20, canvas.height / 2 + 50);
+            context.arc(canvas.width - 20, canvas.height / 2, 50, -Math.PI / 2, Math.PI / 2, false);
+            context.stroke();
         }
 
         function draw() {
@@ -138,8 +184,6 @@
                 document.getElementById('goalMessage').innerText = '';
             }, 3000);
         }
-
-        socket.on('goal', displayGoalMessage);
     </script>
 </body>
 </html>
