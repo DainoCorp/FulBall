@@ -32,6 +32,10 @@
         .team2 {
             color: rgb(0, 26, 255); /* Color del equipo 2 */
         }
+        #goalMessage {
+            font-size: 24px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -112,15 +116,15 @@
             ball = data.ball;
         });
 
-        socket.on('goal', (team) => {
-            if (team === 1) {
+        socket.on('goal', (data) => {
+            if (data.team === 1) {
                 team1Goals++;
                 document.getElementById('team1Score').innerText = team1Goals;
             } else {
                 team2Goals++;
                 document.getElementById('team2Score').innerText = team2Goals;
             }
-            displayGoalMessage(team);
+            displayGoalMessage(data.team);
         });
 
         function drawField() {
@@ -179,9 +183,18 @@
 
         function displayGoalMessage(team) {
             const message = `¡Equipo ${team} ha metido un gol!`;
-            document.getElementById('goalMessage').innerText = message;
+            const goalMessage = document.getElementById('goalMessage');
+            goalMessage.innerText = message;
+
+            // Cambiar el color del mensaje según el equipo
+            if (team === 1) {
+                goalMessage.style.color = 'red';
+            } else {
+                goalMessage.style.color = 'blue';
+            }
+
             setTimeout(() => {
-                document.getElementById('goalMessage').innerText = '';
+                goalMessage.innerText = '';
             }, 3000);
         }
     </script>

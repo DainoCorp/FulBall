@@ -13,8 +13,8 @@ const players = {};
 const ball = { x: 400, y: 250, vx: 0, vy: 0, radius: 15 };
 
 const predefinedPositions = [
-    { x: 100, y: 250 }, // Jugador 1
-    { x: 700, y: 250 }  // Jugador 2
+    { x: 100, y: 250 }, // Jugador 1 (rojo) - izquierda
+    { x: 700, y: 250 }  // Jugador 2 (azul) - derecha
 ];
 
 const fieldWidth = 800;
@@ -87,15 +87,27 @@ const updateBallPosition = () => {
     }
 };
 
-const resetGame = (scoringPlayer) => {
+// Modificación de la función resetGame
+const resetGame = (scoringTeam) => {
+    // Restablecer posiciones de los jugadores
     Object.keys(players).forEach((id, index) => {
         players[id].x = predefinedPositions[index].x;
         players[id].y = predefinedPositions[index].y;
-        players[id].canTouchBall = players[id].id !== scoringPlayer; 
+        players[id].canMove = true;
     });
 
-    ball.x = fieldWidth / 2;
-    ball.y = fieldHeight / 2;
+    // Colocar la pelota **adelante** del jugador contrario
+    if (scoringTeam === 1) {
+        // Si el equipo 1 (rojo) anotó, la pelota debe aparecer **a la derecha del campo** (cerca del jugador azul)
+        ball.x = players[Object.keys(players)[1]].x + 40;  // 40 píxeles adelante del jugador azul
+        ball.y = players[Object.keys(players)[1]].y;
+    } else {
+        // Si el equipo 2 (azul) anotó, la pelota debe aparecer **a la izquierda del campo** (cerca del jugador rojo)
+        ball.x = players[Object.keys(players)[0]].x - 40;  // 40 píxeles adelante del jugador rojo
+        ball.y = players[Object.keys(players)[0]].y;
+    }
+
+    // Desacelerar la pelota
     ball.vx = 0;
     ball.vy = 0;
 };
@@ -110,7 +122,6 @@ io.on('connection', (socket) => {
         y: position.y,
         color: Object.keys(players).length % 2 === 0 ? 'red' : 'blue',
         canMove: true,
-        canTouchBall: true,
         vx: 0,
         vy: 0,
         id: socket.id,
@@ -137,9 +148,7 @@ io.on('connection', (socket) => {
         player.y += player.vy;
 
         handlePlayerCollision(player);
-        if (player.canTouchBall) {
-            handleBallCollision(player, ball);
-        }
+        handleBallCollision(player, ball);
     });
 
     socket.on('touchBall', () => {
@@ -156,6 +165,8 @@ io.on('connection', (socket) => {
         updateBallPosition();
 
         const playerIds = Object.keys(players);
+        if (playerIds.length < 2) return; // Asegurarnos de que ambos jugadores estén presentes
+
         for (let i = 0; i < playerIds.length; i++) {
             for (let j = i + 1; j < playerIds.length; j++) {
                 handlePlayerToPlayerCollision(players[playerIds[i]], players[playerIds[j]]);
@@ -164,15 +175,11 @@ io.on('connection', (socket) => {
 
         // Marcar goles
         if (ball.x <= 20 && ball.y > (fieldHeight / 2 - 50) && ball.y < (fieldHeight / 2 + 50)) {
-            const scoringPlayer = playerIds[1]; // Suponiendo que el jugador 2 anota
-            players[scoringPlayer].canTouchBall = false; // Restringir el acceso a la pelota
-            io.emit('goal', { player: players[scoringPlayer] });
-            resetGame(scoringPlayer);
+            io.emit('goal', { team: 2 }); // Emitir gol para equipo 2 (azul)
+            resetGame(1); // El equipo 1 (rojo) anotó, coloca la pelota **del lado del jugador 2 (azul)**
         } else if (ball.x >= fieldWidth - 20 && ball.y > (fieldHeight / 2 - 50) && ball.y < (fieldHeight / 2 + 50)) {
-            const scoringPlayer = playerIds[0]; // Suponiendo que el jugador 1 anota
-            players[scoringPlayer].canTouchBall = false; // Restringir el acceso a la pelota
-            io.emit('goal', { player: players[scoringPlayer] });
-            resetGame(scoringPlayer);
+            io.emit('goal', { team: 1 }); // Emitir gol para equipo 1 (rojo)
+            resetGame(2); // El equipo 2 (azul) anotó, coloca la pelota **del lado del jugador 1 (rojo)**
         }
 
         io.emit('state', { players, ball });
