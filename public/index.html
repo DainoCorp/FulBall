@@ -36,6 +36,23 @@
             font-size: 24px;
             margin-top: 20px;
         }
+
+        /* Barra de potencia */
+        #chargeBarContainer {
+            width: 200px;
+            height: 20px;
+            background-color: #444;
+            margin: 10px auto;
+            border-radius: 10px;
+            position: relative;
+        }
+        #chargeBar {
+            width: 0%;
+            height: 100%;
+            background-color: yellow;
+            border-radius: 10px;
+            transition: width 0.1s ease-out;
+        }
     </style>
 </head>
 <body>
@@ -45,6 +62,11 @@
     </div>
     <h1 id="goalMessage"></h1>
     <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+    <!-- Barra de potencia -->
+    <div id="chargeBarContainer">
+        <div id="chargeBar"></div>
+    </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -64,6 +86,12 @@
             down: false,
             kick: false
         };
+
+        let charge = 0; // Para almacenar la carga del tiro
+        const maxCharge = 100; // El valor máximo de la carga
+
+        // Tasa de carga cuando se mantiene la barra espaciadora
+        const chargeRate = 1; // La velocidad a la que se carga la barra cuando se mantiene la barra espaciadora
 
         document.addEventListener('keydown', (event) => {
             switch (event.key) {
@@ -101,6 +129,8 @@
                     break;
                 case ' ':
                     keys.kick = false;
+                    socket.emit('shoot', { charge }); // Disparar la pelota con la potencia cargada
+                    charge = 0; // Reiniciar la carga después de disparar
                     break;
             }
         });
@@ -161,6 +191,7 @@
         function draw() {
             drawField();
 
+            // Dibujar los jugadores
             for (let id in players) {
                 const player = players[id];
                 context.beginPath();
@@ -170,6 +201,7 @@
                 context.closePath();
             }
 
+            // Dibujar la pelota
             context.beginPath();
             context.arc(ball.x, ball.y, ball.radius, 0, 2 * Math.PI);
             context.fillStyle = 'white';
@@ -177,6 +209,14 @@
             context.closePath();
 
             socket.emit('movement', keys);
+
+            // Cargar la barra de potencia solo si la barra espaciadora está presionada
+            if (keys.kick) {
+                charge = Math.min(charge + chargeRate, maxCharge); // Cargar la barra más rápido cuando se mantiene la barra espaciadora
+            }
+
+            // Actualizar la barra de potencia
+            document.getElementById('chargeBar').style.width = `${charge}%`;
 
             requestAnimationFrame(draw);
         }

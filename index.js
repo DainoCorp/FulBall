@@ -25,6 +25,7 @@ const distance = (x1, y1, x2, y2) => {
 };
 
 const handlePlayerCollision = (player) => {
+    // Colisiones con los límites del campo
     if (player.x < 20) player.x = 20; 
     else if (player.x > fieldWidth - 20) player.x = fieldWidth - 20; 
     if (player.y < 20) player.y = 20; 
@@ -66,47 +67,65 @@ const updateBallPosition = () => {
     ball.x += ball.vx;
     ball.y += ball.vy;
 
+    // Factor de desaceleración cuando la pelota rebota
+    const bounceDeceleration = 0.02;  // Factor que controla cuánto se reduce la velocidad al rebotar
+
     if (ball.x < ball.radius) {
         ball.x = ball.radius;
-        ball.vx = Math.abs(ball.vx);
+        ball.vx = Math.abs(ball.vx) - bounceDeceleration;  // Reducir la velocidad en el rebote
+        if (ball.vx < 0) ball.vx = 0;  // Asegurarse de que no se invierta a una velocidad negativa
     } else if (ball.x > fieldWidth - ball.radius) {
         ball.x = fieldWidth - ball.radius;
-        ball.vx = -Math.abs(ball.vx);
+        ball.vx = -Math.abs(ball.vx) - bounceDeceleration;  // Reducir la velocidad en el rebote
+        if (ball.vx > 0) ball.vx = 0;  // Asegurarse de que no se invierta a una velocidad negativa
     }
     if (ball.y < ball.radius) {
         ball.y = ball.radius;
-        ball.vy = Math.abs(ball.vy);
+        ball.vy = Math.abs(ball.vy) - bounceDeceleration;  // Reducir la velocidad en el rebote
+        if (ball.vy < 0) ball.vy = 0;  // Asegurarse de que no se invierta a una velocidad negativa
     } else if (ball.y > fieldHeight - ball.radius) {
         ball.y = fieldHeight - ball.radius;
-        ball.vy = -Math.abs(ball.vy);
+        ball.vy = -Math.abs(ball.vy) - bounceDeceleration;  // Reducir la velocidad en el rebote
+        if (ball.vy > 0) ball.vy = 0;  // Asegurarse de que no se invierta a una velocidad negativa
     }
 
+    // Detener la pelota si la velocidad es muy baja
     if (Math.abs(ball.vx) < 0.1 && Math.abs(ball.vy) < 0.1) {
         ball.vx = 0;
         ball.vy = 0;
     }
 };
 
-// Modificación de la función resetGame
+// Modificación de la función resetGame con el contador de gol
+let goalCountdown = null; // Variable para el tiempo del contador
+
 const resetGame = (scoringTeam) => {
     // Restablecer posiciones de los jugadores
     Object.keys(players).forEach((id, index) => {
         players[id].x = predefinedPositions[index].x;
         players[id].y = predefinedPositions[index].y;
-        players[id].canMove = true;
+        players[id].canMove = false;  // Deshabilitar movimiento durante el contador
     });
 
-    // Colocar la pelota **adelante** del jugador contrario
+    // Colocar la pelota en el lado contrario al que anotó
+    const centerX = fieldWidth / 2;
+    const centerY = fieldHeight / 2;
+    const ballOffset = 150; // Ajusta esta distancia si quieres que la pelota esté más cerca o más lejos del centro
+
     if (scoringTeam === 1) {
-        // Si el equipo 1 (rojo) anotó, la pelota debe aparecer **a la derecha del campo** (cerca del jugador azul)
-        ball.x = players[Object.keys(players)[1]].x + 40;  // 40 píxeles adelante del jugador azul
-        ball.y = players[Object.keys(players)[1]].y;
+        ball.x = centerX - ballOffset; // A la izquierda del campo
+        ball.y = centerY; // Centrada verticalmente
     } else {
-        // Si el equipo 2 (azul) anotó, la pelota debe aparecer **a la izquierda del campo** (cerca del jugador rojo)
-        ball.x = players[Object.keys(players)[0]].x - 40;  // 40 píxeles adelante del jugador rojo
-        ball.y = players[Object.keys(players)[0]].y;
+        ball.x = centerX + ballOffset; // A la derecha del campo
+        ball.y = centerY; // Centrada verticalmente
     }
 
+    // Iniciar el contador de 5 segundos (por ejemplo)
+    goalCountdown = 5;
+    
+    // Actualizar el fondo a borroso
+    io.emit('setBlur', true);
+    
     // Desacelerar la pelota
     ball.vx = 0;
     ball.vy = 0;
@@ -122,17 +141,21 @@ io.on('connection', (socket) => {
         y: position.y,
         color: Object.keys(players).length % 2 === 0 ? 'red' : 'blue',
         canMove: true,
+        restricted: false,  // Estado para controlar la "pared invisible"
         vx: 0,
         vy: 0,
         id: socket.id,
-        name: `Jugador ${Object.keys(players).length}` // Nombre del jugador
+        name: `Jugador ${Object.keys(players).length}`, // Nombre del jugador
+        charge: 0,  // Potencia de carga inicial
     };
 
     socket.emit('init', { players, ball });
 
     socket.on('movement', (movementData) => {
         const player = players[socket.id];
-        if (!player.canMove) return;
+        
+        // Si el contador está en marcha, no permitir movimiento
+        if (!player.canMove || goalCountdown > 0) return;
 
         player.vx *= 0.9;
         player.vy *= 0.9;
@@ -151,9 +174,34 @@ io.on('connection', (socket) => {
         handleBallCollision(player, ball);
     });
 
-    socket.on('touchBall', () => {
+    // Manejo de la carga de la potencia del tiro con la barra espaciadora
+    socket.on('chargePower', () => {
         const player = players[socket.id];
-        player.canTouchBall = true; // Permitir tocar la pelota
+
+        // Limitar la carga de potencia
+        if (player.charge < 100) {
+            player.charge += 0.5;  // Aumenta la carga mientras se mantiene la tecla
+        }
+    });
+
+    // Disparo de la pelota con la potencia cargada
+    socket.on('shoot', () => {
+        const player = players[socket.id];
+
+        if (player.charge > 0) {
+            // Direccionamos la pelota con la carga
+            const dx = ball.x - player.x;
+            const dy = ball.y - player.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const unitX = dx / distance;
+            const unitY = dy / distance;
+
+            // Aplicamos la potencia al tiro
+            ball.vx = unitX * player.charge * 0.1;
+            ball.vy = unitY * player.charge * 0.1;
+
+            player.charge = 0;  // Restablecer la carga después de disparar
+        }
     });
 
     socket.on('disconnect', () => {
@@ -180,6 +228,18 @@ io.on('connection', (socket) => {
         } else if (ball.x >= fieldWidth - 20 && ball.y > (fieldHeight / 2 - 50) && ball.y < (fieldHeight / 2 + 50)) {
             io.emit('goal', { team: 1 }); // Emitir gol para equipo 1 (rojo)
             resetGame(2); // El equipo 2 (azul) anotó, coloca la pelota **del lado del jugador 1 (rojo)**
+        }
+
+        // Contador de tiempo
+        if (goalCountdown > 0) {
+            goalCountdown -= 1 / 60;  // Decrementar el contador cada frame (60 FPS)
+            io.emit('countdown', Math.floor(goalCountdown));  // Enviar el tiempo restante a los jugadores
+        } else if (goalCountdown <= 0) {
+            // Rehabilitar el movimiento y quitar la borrosidad al llegar a 0
+            Object.keys(players).forEach((id) => {
+                players[id].canMove = true;  // Habilitar movimiento
+            });
+            io.emit('setBlur', false);  // Quitar el fondo borroso
         }
 
         io.emit('state', { players, ball });
